@@ -218,6 +218,35 @@ test('soft drop scores 1 per cell and marks drop_type soft_drop', () => {
   assert.equal(snaps[0].score, 19); // O spawns rows 1-2 -> rows 20-21: 19 cells
 });
 
+test('soft drop does not burst-spend time banked toward gravity', () => {
+  const { engine } = newGame();
+  engine.debugSpawn('O');
+  engine.update(90);
+  for (let i = 0; i < 7; i++) engine.update(100); // 790 ms banked at level 1 (800 ms interval)
+  const y0 = engine.active!.y;
+  const score0 = engine.score;
+  engine.press('softDrop');
+  engine.update(16);
+  assert.equal(engine.active!.y, y0 + 1);
+  assert.equal(engine.score, score0 + 1);
+  engine.update(16);
+  engine.update(16);
+  assert.equal(engine.active!.y, y0 + 2); // steady pace: one row per 33 ms
+  engine.release('softDrop');
+});
+
+test('soft drop to the floor then release still logs soft_drop', () => {
+  const { engine, snaps } = newGame();
+  engine.debugSpawn('O');
+  engine.press('softDrop');
+  let guard = 0;
+  while (engine.ghostY() !== engine.active!.y && guard++ < 500) engine.update(16);
+  engine.release('softDrop');
+  guard = 0;
+  while (!snaps.length && guard++ < 500) engine.update(16);
+  assert.equal(snaps[0].drop_type, 'soft_drop');
+});
+
 test('DAS: one move on press, auto-repeat after 133 ms every 33 ms', () => {
   const { engine } = newGame();
   engine.debugSpawn('O');

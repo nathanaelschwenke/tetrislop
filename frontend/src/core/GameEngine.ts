@@ -65,6 +65,8 @@ export class GameEngine {
   private lockTimerMs = 0;
   private lockResets = 0;
   private lastSoftDropActiveAt = -Infinity;
+  /** True while the piece rests on the surface it reached through a soft-drop step. */
+  private landedBySoftDrop = false;
 
   // ---- held input ----------------------------------------------------------
   private leftHeld = false;
@@ -164,8 +166,10 @@ export class GameEngine {
       case 'softDrop':
         this.softHeld = true;
         this.lastSoftDropActiveAt = this._gameTimeMs;
-        // first row drops on the next update
-        this.gravityAccMs = Math.max(this.gravityAccMs, this.currentDropInterval());
+        // Exactly one row drops on the next update, then a steady soft-drop pace.
+        // (Must not keep the time banked toward the slower gravity interval,
+        // otherwise that time is spent at the fast rate and the piece jumps.)
+        this.gravityAccMs = this.currentDropInterval();
         break;
       case 'hardDrop':
         this.hardDrop();
@@ -223,8 +227,11 @@ export class GameEngine {
 
     // ---- gravity -------------------------------------------------------------
     if (!this.isGrounded()) {
-      this.gravityAccMs += dt;
+      this.landedBySoftDrop = false;
       const interval = this.currentDropInterval();
+      // Never carry more than one interval of banked time: the interval can
+      // shrink (soft drop released/pressed, level up) and must not cause bursts.
+      this.gravityAccMs = Math.min(this.gravityAccMs, interval) + dt;
       while (this.gravityAccMs >= interval && !this.isGrounded()) {
         this.gravityAccMs -= interval;
         this._active.y++;
@@ -233,6 +240,7 @@ export class GameEngine {
           this._score += GAME_CONFIG.scoring.softDropPerCell;
           this.events.emit('softDropStep', undefined);
         }
+        if (this.isGrounded()) this.landedBySoftDrop = this.softHeld;
       }
     }
 
@@ -241,7 +249,10 @@ export class GameEngine {
       this.gravityAccMs = 0;
       this.lockTimerMs += dt;
       if (this.lockTimerMs >= GAME_CONFIG.lockDelayMs) {
-        const recentSoft = this.softHeld || this._gameTimeMs - this.lastSoftDropActiveAt <= GAME_CONFIG.softDropRecentMs;
+        const recentSoft =
+          this.softHeld ||
+          this.landedBySoftDrop ||
+          this._gameTimeMs - this.lastSoftDropActiveAt <= GAME_CONFIG.softDropRecentMs;
         this.lockPiece(recentSoft ? 'soft_drop' : 'gravity_lock');
       }
     }
@@ -444,6 +455,7 @@ export class GameEngine {
     this.lockTimerMs = 0;
     this.lockResets = 0;
     this.gravityAccMs = 0;
+    this.landedBySoftDrop = false;
   }
 
   /** Debug / test helper: replace the active piece with a freshly spawned one of the given type. */
