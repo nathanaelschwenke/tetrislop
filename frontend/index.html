@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#04050b" />
+    <title>TetriSlop</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <main id="app">
+      <canvas id="game" aria-label="TetriSlop game board"></canvas>
+
+      <!-- On-screen controls, shown automatically on touch devices -->
+      <div id="touch-controls" aria-label="Touch controls">
+        <div class="meta-row">
+          <button data-meta="start" class="meta start-btn" aria-label="Start or pause">START</button>
+          <button data-meta="restart" class="meta" aria-label="Restart">↻</button>
+          <button data-meta="mute" class="meta" aria-label="Mute">♪</button>
+        </div>
+        <div class="pad">
+          <div class="cluster">
+            <button data-action="left" aria-label="Move left">◀</button>
+            <button data-action="softDrop" aria-label="Soft drop">▼</button>
+            <button data-action="right" aria-label="Move right">▶</button>
+          </div>
+          <div class="cluster">
+            <button data-action="rotateCCW" aria-label="Rotate left">⟲</button>
+            <button data-action="hardDrop" class="hard" aria-label="Hard drop">⤓</button>
+            <button data-action="rotateCW" aria-label="Rotate right">⟳</button>
+          </div>
+        </div>
+      </div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

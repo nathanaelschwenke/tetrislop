@@ -1,0 +1,120 @@
+:root {
+  --bg: #04050b;
+  --btn: rgba(20, 27, 54, 0.85);
+  --btn-pressed: rgba(79, 216, 255, 0.35);
+  --btn-border: rgba(140, 170, 255, 0.22);
+  --text: #e8ecff;
+  --muted: #8a93b8;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Chakra Petch', system-ui, sans-serif;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  touch-action: none;
+}
+
+#game {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  display: block;
+  outline: none;
+}
+
+/* ---- touch controls ---------------------------------------------------- */
+#touch-controls {
+  display: none;
+  flex: 0 0 auto;
+  padding: 6px 12px calc(10px + env(safe-area-inset-bottom));
+  gap: 8px;
+  flex-direction: column;
+}
+
+body.touch #touch-controls {
+  display: flex;
+}
+
+#touch-controls button {
+  font: inherit;
+  color: var(--text);
+  background: var(--btn);
+  border: 1px solid var(--btn-border);
+  border-radius: 14px;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: background 60ms linear, transform 60ms linear;
+}
+
+#touch-controls button.pressed {
+  background: var(--btn-pressed);
+  transform: scale(0.96);
+}
+
+.meta-row {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.meta-row .meta {
+  height: 34px;
+  min-width: 56px;
+  padding: 0 14px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.pad {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cluster {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  flex: 1 1 0;
+  max-width: 230px;
+}
+
+.cluster button {
+  height: clamp(54px, 9vh, 72px);
+  font-size: 24px;
+}
+
+.cluster button.hard {
+  background: rgba(79, 216, 255, 0.16);
+}
+
+@media (min-width: 700px) {
+  .pad {
+    justify-content: center;
+    gap: 48px;
+  }
+}
