@@ -4,7 +4,7 @@
  * telemetry produced in Phase 1 can be reproduced exactly in later phases.
  */
 
-export const GAME_VERSION = '1.1.0';
+export const GAME_VERSION = '1.2.0';
 
 export const GAME_CONFIG = {
   // ---- Board ---------------------------------------------------------------

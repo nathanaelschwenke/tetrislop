@@ -105,8 +105,13 @@ window.addEventListener('keydown', (e) => {
   document.body.classList.remove('gp-nav');
   if (screen === 'menu' && !e.repeat) setMenuDevice('keyboard');
 }, true);
+// Audio unlock: only these events count as user activation. A touch
+// `pointerdown` does not, which left phones silent.
+for (const type of ['pointerup', 'touchend', 'click', 'keydown'] as const) {
+  window.addEventListener(type, () => synth.unlock(), { capture: true, passive: true });
+}
 window.addEventListener('pointerdown', (e) => {
-  synth.unlock();
+  synth.unlock(); // enough for mouse; touch is handled by pointerup/touchend
   document.body.classList.remove('gp-nav');
   if (screen !== 'menu' || e.pointerType === 'mouse') return;
   if (e.target instanceof Element && e.target.closest('#input-btn')) return; // manual switch

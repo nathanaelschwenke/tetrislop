@@ -37,8 +37,13 @@ export class SynthEngine {
     this.presets = structuredClone(SYNTH_PRESETS);
   }
 
-  /** Must be called from a user gesture (browser autoplay policy). */
+  /**
+   * Must be called from an activating user gesture (browser autoplay policy):
+   * keydown, click, pointerup or touchend. A touch `pointerdown` does NOT
+   * count, so on phones the context would stay suspended forever.
+   */
   unlock(): void {
+    if (this.ctx?.state === 'running') return;
     if (!this.ctx) {
       const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!Ctor) return;
@@ -55,7 +60,15 @@ export class SynthEngine {
       this.master.gain.value = this.muted ? 0 : this.masterGain;
       this.master.connect(comp);
     }
-    if (this.ctx.state === 'suspended') void this.ctx.resume();
+    // 'interrupted' is iOS Safari's state after a call / app switch.
+    if (this.ctx.state !== 'closed') this.ctx.resume().catch(() => { /* retried on the next gesture */ });
+    // Older iOS only fully unlocks once a source actually starts inside the gesture.
+    try {
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.ctx.createBuffer(1, 1, this.ctx.sampleRate);
+      src.connect(this.ctx.destination);
+      src.start(0);
+    } catch { /* ignore */ }
   }
 
   get isMuted(): boolean { return this.muted; }
@@ -77,7 +90,10 @@ export class SynthEngine {
 
   /** Suspend audio processing (e.g. while the tab is hidden). */
   suspend(): void { if (this.ctx?.state === 'running') void this.ctx.suspend(); }
-  resume(): void { if (this.ctx?.state === 'suspended') void this.ctx.resume(); }
+  resume(): void {
+    // May be rejected without a gesture (iOS); the gesture listeners retry via unlock().
+    if (this.ctx && this.ctx.state !== 'running' && this.ctx.state !== 'closed') this.ctx.resume().catch(() => {});
+  }
 
   /**
    * Global tension 0..1: raises pitch, opens the filter and adds vibrato.
