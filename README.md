@@ -65,16 +65,25 @@ cd frontend && npm test        # engine (scoring, kicks, DAS, lock delay, top-ou
 
 ## Controls
 
-| Keyboard              | Touch | Action        |
-|-----------------------|-------|---------------|
-| ← →                   | ◀ ▶   | move (DAS 133 ms / ARR 33 ms) |
-| ↑ / X                 | ⟳     | rotate right  |
-| Z / Y / Ctrl          | ⟲     | rotate left   |
-| ↓                     | ▼     | soft drop     |
-| Space                 | ⤓     | hard drop     |
-| P / Esc               | ❚❚    | pause         |
-| R                     | ↻     | restart (touch: first tap pauses, second restarts) |
-| M                     | ♪     | mute          |
+| Keyboard              | Touch | Controller (standard mapping) | Action        |
+|-----------------------|-------|-------------------------------|---------------|
+| ← →                   | ◀ ▶   | D-pad / left stick ← →        | move (DAS 133 ms / ARR 33 ms) |
+| ↑ / X                 | ⟳     | B / X / RB                    | rotate right  |
+| Z / Y / Ctrl          | ⟲     | A / Y / LB                    | rotate left   |
+| ↓                     | ▼     | D-pad / left stick ↓          | soft drop     |
+| Space                 | ⤓     | D-pad ↑                       | hard drop     |
+| P / Esc               | ❚❚    | Start                         | pause         |
+| R                     | –     | –                             | restart       |
+| M                     | ♪     | –                             | mute          |
+
+The input method is picked on the title screen (auto-detected from the last key press / touch / controller
+button, or switched via the icon) and is **locked for the whole game**: input from other devices is ignored
+(exception: Esc / P on a keyboard always opens the pause screen).
+In menus and the pause / game-over panel the controller navigates with D-pad/stick, A confirms, B goes back.
+Touch also works with gestures on the board: drag left/right moves the piece (one column per cell width),
+tap rotates right, a fast swipe down hard-drops. After a top out all input is ignored for 1 s
+(`gameOverInputLockMs`) to prevent accidental restarts.
+Bindings: `KEY_BINDINGS` in `input/InputManager.ts`, `GAMEPAD_BINDINGS` in `input/GamepadManager.ts`.
 
 ## Data collection – how a game log is produced
 
@@ -103,7 +112,8 @@ Field semantics:
 - **`time_delta_ms`** = time from the piece's spawn to its lock, game time only (pauses excluded).
 - **`inputs_count`** = real presses of game keys/buttons (no DAS / OS auto-repeat); **`rotations_count`** = successful rotations.
 - **`combo_counter`** is `max(0, combo)` (internal −1 → 0). Use `lines_cleared_this_move` to tell "no clear" from "first clear".
-- **`input_device`** = `keyboard`, `touch`, or `mixed` if both were used.
+- **`input_device`** = `keyboard`, `touch` or `gamepad` (fixed per game). `mixed` only appears in logs from
+  before the input lock.
 
 ## Phase 2/3 hooks
 

@@ -6,7 +6,7 @@ export type DropType = 'hard_drop' | 'soft_drop' | 'gravity_lock';
 
 export type TerminationReason = 'top_out' | 'manual_restart' | 'window_closed';
 
-export type InputDevice = 'keyboard' | 'touch' | 'mixed';
+export type InputDevice = 'keyboard' | 'touch' | 'gamepad' | 'mixed';
 
 export type EngineState = 'ready' | 'playing' | 'paused' | 'over';
 

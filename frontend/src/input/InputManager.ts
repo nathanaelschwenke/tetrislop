@@ -51,6 +51,10 @@ export class InputManager {
       const action = KEY_BINDINGS[e.code];
       this.handlers.gesture();
       if (!action) return;
+      // Keys inside a dialog (Esc closes it) and Enter/Space on a focused UI button keep their native behaviour.
+      const el = e.target instanceof Element ? e.target : null;
+      if (el?.closest('dialog')) return;
+      if ((e.code === 'Enter' || e.code === 'Space') && el?.closest('button')) return;
       e.preventDefault();
       if (e.repeat) return;
       if (isGameAction(action)) {

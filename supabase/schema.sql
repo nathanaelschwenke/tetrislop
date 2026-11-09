@@ -7,7 +7,7 @@ create table if not exists public.games (
   player_id          uuid        not null,
   timestamp_utc      timestamptz not null,         -- game start (client clock)
   game_version       text        not null,
-  input_device       text        not null check (input_device in ('keyboard', 'touch', 'mixed')),
+  input_device       text        not null check (input_device in ('keyboard', 'touch', 'gamepad', 'mixed')),
   termination_reason text        not null check (termination_reason in ('top_out', 'manual_restart', 'window_closed')),
   is_afk             boolean     not null default false,
   total_moves        integer     not null check (total_moves >= 3),
@@ -21,6 +21,11 @@ create table if not exists public.games (
   constraint moves_match_total check (jsonb_array_length(moves) = total_moves),
   constraint moves_size_limit  check (pg_column_size(moves) < 5000000)
 );
+
+-- Migration for tables created before controller support (adds 'gamepad'):
+alter table public.games drop constraint if exists games_input_device_check;
+alter table public.games add constraint games_input_device_check
+  check (input_device in ('keyboard', 'touch', 'gamepad', 'mixed'));
 
 create index if not exists games_training_idx on public.games (termination_reason, is_afk, timestamp_utc);
 

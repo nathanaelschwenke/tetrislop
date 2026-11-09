@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="de">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
@@ -9,30 +9,166 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet" />
   </head>
-  <body>
+  <body data-screen="menu">
     <main id="app">
-      <canvas id="game" aria-label="TetriSlop game board"></canvas>
+      <div id="stage">
+        <canvas id="game" aria-label="TetriSlop game board"></canvas>
 
-      <!-- On-screen controls, shown automatically on touch devices -->
-      <div id="touch-controls" aria-label="Touch controls">
-        <div class="meta-row">
-          <button data-meta="start" class="meta start-btn" aria-label="Start or pause">START</button>
-          <button data-meta="restart" class="meta" aria-label="Restart">↻</button>
-          <button data-meta="mute" class="meta" aria-label="Mute">♪</button>
+        <!-- Touch pause / mute, positioned into the space the renderer reserves (top strip) -->
+        <div id="touch-hud" class="touch-hud">
+          <button data-meta="start" class="hud-btn start-btn" aria-label="Pause">❚❚</button>
+          <button data-meta="mute" class="hud-btn mute-btn" aria-label="Ton an/aus" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path class="spk" d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" />
+              <g class="waves"><path d="M15.5 9a4.2 4.2 0 0 1 0 6" /><path d="M18 6.5a7.8 7.8 0 0 1 0 11" /></g>
+              <g class="cross"><path d="M16 9.5l5 5" /><path d="M21 9.5l-5 5" /></g>
+            </svg>
+          </button>
         </div>
+
+        <!-- Pause / game-over panel, positioned over the well by main.ts -->
+        <div id="game-panel" class="game-panel" hidden>
+          <h2 class="panel-title"></h2>
+          <p class="panel-score"></p>
+          <p class="panel-stats"></p>
+          <p class="panel-upload"></p>
+          <div class="panel-buttons"></div>
+          <div class="panel-device"></div>
+          <p class="panel-hint"></p>
+        </div>
+      </div>
+
+      <!-- On-screen controls (touch input method). Swipes/taps on the board work as well. -->
+      <div id="touch-controls" aria-label="Touch controls">
         <div class="pad">
-          <div class="cluster">
+          <div class="cluster move">
             <button data-action="left" aria-label="Move left">◀</button>
             <button data-action="softDrop" aria-label="Soft drop">▼</button>
             <button data-action="right" aria-label="Move right">▶</button>
           </div>
-          <div class="cluster">
+          <div class="cluster turn">
             <button data-action="rotateCCW" aria-label="Rotate left">⟲</button>
-            <button data-action="hardDrop" class="hard" aria-label="Hard drop">⤓</button>
             <button data-action="rotateCW" aria-label="Rotate right">⟳</button>
+            <button data-action="hardDrop" class="hard" aria-label="Hard drop">⤓</button>
           </div>
         </div>
       </div>
+
+      <!-- Title screen -->
+      <section id="menu" class="menu" aria-label="Hauptmenü">
+        <div class="menu-inner">
+          <h1 class="menu-logo" aria-label="TetriSlop"></h1>
+          <p class="menu-tag">Spielen für die Wissenschaft</p>
+
+          <button id="play-btn" class="play-btn" aria-label="Spiel starten">
+            <svg viewBox="0 0 100 100" aria-hidden="true"><path d="M38 27 L76 50 L38 73 Z" /></svg>
+          </button>
+
+          <button id="info-btn" class="info-btn">
+            <span class="info-icon" aria-hidden="true">?</span> Worum geht's?
+          </button>
+
+          <div class="icon-row">
+            <button id="mute-btn" class="icon-btn" aria-pressed="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path class="spk" d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" />
+                <g class="waves"><path d="M15.5 9a4.2 4.2 0 0 1 0 6" /><path d="M18 6.5a7.8 7.8 0 0 1 0 11" /></g>
+                <g class="cross"><path d="M16 9.5l5 5" /><path d="M21 9.5l-5 5" /></g>
+              </svg>
+              <span class="icon-label"></span>
+            </button>
+            <button id="input-btn" class="icon-btn">
+              <svg class="ico-keyboard" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="2.5" y="6" width="19" height="12" rx="2" />
+                <path d="M6 9.5h1M9 9.5h1M12 9.5h1M15 9.5h1M18 9.5h0.01M6 12h1M9 12h1M12 12h1M15 12h1M18 12h0.01M8 15h8" />
+              </svg>
+              <svg class="ico-touch" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="6" y="2.5" width="12" height="19" rx="2.2" />
+                <path d="M10.5 18.5h3" />
+              </svg>
+              <svg class="ico-gamepad" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 7h10a5 5 0 0 1 4.9 6l-.8 3.6a2.2 2.2 0 0 1-3.8 1L15.5 15.5h-7l-1.8 2.1a2.2 2.2 0 0 1-3.8-1L2.1 13A5 5 0 0 1 7 7z" />
+                <path d="M7.5 10v3M6 11.5h3" />
+                <path d="M16 10.5h0.01M18 12.5h0.01" />
+              </svg>
+              <span class="icon-label"></span>
+            </button>
+          </div>
+          <p id="input-hint" class="input-hint"></p>
+        </div>
+
+        <footer class="menu-footer">
+          <button id="db-status" class="db-status" data-state="checking" title="Erneut prüfen">
+            <span class="dot" aria-hidden="true"></span><span class="db-text">Datenbank wird geprüft…</span>
+          </button>
+          <p class="credits">
+            Ein Lernprojekt von Nathanael Schwenke, entstanden mit Hilfe generativer KI.
+            Steht in keiner Verbindung zur Tetris Holding. </br>Please do not sue.
+          </p>
+        </footer>
+      </section>
+
+      <dialog id="info-dialog" class="info-dialog" aria-labelledby="info-title">
+        <form method="dialog" class="info-close-form">
+          <button class="info-close" aria-label="Schließen">✕</button>
+        </form>
+        <h2 id="info-title">Worum geht's?</h2>
+        <p>
+          <strong>TetriSlop</strong> ist Teil eines Deep-Learning-Projekts im Master-Studium. Ich trainiere ein
+          neuronales Netz, das nach jedem platzierten Stein vorhersagt, <em>wie viele Züge du noch überlebst</em> –
+          und wie sicher es sich bei dieser Prognose ist.
+        </p>
+        <p>
+          Dafür brauche ich echte Spielverläufe. Bots spielen zu perfekt, Zufallseingaben zu schlecht – Deswegen bin ich auf echte Spieler angewiesen.
+ So wie dich! :3        </p>
+        <p>
+          Später soll das Modell live mitlaufen: Musik und Effekte reagieren darauf, wie es gerade um dich steht –
+          vor allem, wenn du eine scheinbar sichere Niederlage doch noch abwendest.
+        </p>
+
+        <h3>Was wird gespeichert?</h3>
+        <ul>
+          <li>Nach jedem Stein: Spielfeld, aktuelle und nächste Steine, Punkte, Level, Zeit und Anzahl der Eingaben.</li>
+          <li>Eine zufällige, anonyme Spieler-ID aus deinem Browser, damit ich Partien derselben Person zuordnen kann.</li>
+          <li>Keine Namen, keine E-Mail-Adressen, keine Konten.</li>
+        </ul>
+
+        <h3>So hilfst du am meisten</h3>
+        <ul>
+          <li>Spiel ganz normal und so gut du kannst.</li>
+          <li>Spiel Runden möglichst bis zum Ende – abgebrochene Partien sind fürs Training weniger nützlich.</li>
+          <li>Mehrere Runden sind super. Jede Partie zählt!</li>
+        </ul>
+
+        <h3>Warum gibt es keine Holding Queue?</h3>
+        <p>Ich vermisse die Funktion doch auch! Aber traurigerweise zieht sie Spiele unnötig in die Länge und macht es meinem Modell schwer, das Spiel richtig zu verstehen.</p>
+        <p>T-Spins gibt es übrigens auch nicht. Aber wer vermisst die denn auch?</p>
+
+        <h3>Steuerung</h3>
+        <h4>Tastatur</h4>
+        <dl class="keys">
+          <dt>← →</dt><dd>bewegen</dd>
+          <dt>↑ / X</dt><dd>rechts drehen</dd>
+          <dt>Z / Y / Strg</dt><dd>links drehen</dd>
+          <dt>↓</dt><dd>Soft Drop</dd>
+          <dt>Leertaste</dt><dd>Hard Drop</dd>
+          <dt>P / Esc</dt><dd>Pause</dd>
+          <dt>M</dt><dd>Ton an/aus</dd>
+        </dl>
+        <h4>Controller</h4>
+        <dl class="keys">
+          <dt>Steuerkreuz / Stick ← →</dt><dd>bewegen</dd>
+          <dt>B / X / RB</dt><dd>rechts drehen</dd>
+          <dt>A / Y / LB</dt><dd>links drehen</dd>
+          <dt>↓</dt><dd>Soft Drop</dd>
+          <dt>Steuerkreuz ↑</dt><dd>Hard Drop</dd>
+          <dt>Start</dt><dd>Pause</dd>
+        </dl>
+        <p class="muted">Auf Handy und Tablet erscheinen die Tasten unter dem Spielfeld. Die Eingabemethode wird im
+          Hauptmenü erkannt und bleibt während einer Runde fest.</p>
+
+        <p class="thanks">Danke fürs Mitspielen!</p>
+      </dialog>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

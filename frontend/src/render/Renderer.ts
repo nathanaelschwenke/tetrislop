@@ -26,9 +26,6 @@ export interface RenderView {
   score: number;
   level: number;
   lines: number;
-  moves: number;
-  combo: number;
-  b2b: number;
   uploadStatus: UploadStatus;
   muted: boolean;
   touchMode: boolean;
@@ -44,6 +41,8 @@ interface Layout {
   logo: Rect;
   next: Rect;
   stats: Rect;
+  /** Space kept free for the DOM pause/mute buttons (touch mode only). */
+  hud: Rect | null;
 }
 
 interface FloatingText { text: string; hue: number; start: number; big: boolean }
@@ -75,6 +74,7 @@ export class Renderer {
   private flashes: RowFlash[] = [];
   private trails: DropTrail[] = [];
   private shakeUntil = 0;
+  private hudReserved = false;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -147,6 +147,28 @@ export class Renderer {
   // ===========================================================================
   // Layout
   // ===========================================================================
+  /** Reserve room for the touch pause/mute buttons (see getHudRect). */
+  setHudReserved(on: boolean): void {
+    if (on === this.hudReserved) return;
+    this.hudReserved = on;
+    this.layout = this.computeLayout();
+  }
+
+  /** Where the touch pause/mute buttons go, in canvas CSS pixels. */
+  getHudRect(): Readonly<Rect> | null {
+    return this.layout.hud;
+  }
+
+  /** Size of one board cell in CSS pixels (swipe gestures move one column per cell). */
+  getCellSize(): number {
+    return this.layout.cell;
+  }
+
+  /** The well's rectangle in canvas CSS pixels (for DOM overlays). */
+  getWellRect(): Readonly<Rect> {
+    return this.layout.well;
+  }
+
   resize(): void {
     const rect = this.canvas.getBoundingClientRect();
     this.dpr = Math.min(window.devicePixelRatio || 1, 3);
@@ -180,28 +202,36 @@ export class Renderer {
         cell,
         well,
         logo: { x: well.x - cell * 2, y: y0, w: wellW + cell * 4, h: cell * 2 },
-        stats: { x: x0, y: well.y, w: cell * 6, h: cell * 12.5 },
+        stats: { x: x0, y: well.y, w: cell * 6, h: cell * 8 },
         next: { x: well.x + wellW + Math.round(cell * 0.8), y: well.y, w: cell * 6, h: cell * 10.5 },
+        hud: this.hudReserved ? { x: x0, y: y0, w: cell * 6, h: Math.round(cell * 2.1) } : null,
       };
     }
 
-    // portrait: [well][side panel]
-    const unitsW = cols + 0.5 + 4.6 + 0.6;
-    const unitsH = 1.9 + rows + 0.4;
-    const cell = Math.max(8, Math.floor(Math.min(W / unitsW, H / unitsH)));
+    // portrait (phones): top strip [hud buttons][stats][next], well below, no logo
+    const stripU = 3.2;
+    const pad = 0.25;
+    const unitsH = pad + stripU + 0.35 + rows + pad;
+    const cell = Math.max(8, Math.floor(Math.min(W / (cols + 2 * pad), H / unitsH, W / 13.6)));
     const wellW = cell * cols;
-    const totalW = cell * (cols + 0.5 + 4.6);
-    const x0 = Math.round((W - totalW) / 2);
-    const y0 = Math.round((H - cell * unitsH) / 2);
-    const well = { x: x0, y: y0 + Math.round(cell * 1.9), w: wellW, h: cell * rows };
-    const sideX = well.x + wellW + Math.round(cell * 0.5);
+    const stripH = Math.round(cell * stripU);
+    const stripW = Math.min(W - Math.round(cell * pad * 2), cell * 16);
+    const xs = Math.round((W - stripW) / 2);
+    const y0 = Math.round((H - cell * unitsH) / 2 + cell * pad);
+    const gap = Math.round(cell * 0.25);
+    const hudW = this.hudReserved ? Math.round(stripH * 0.62) : 0;
+    const rest = stripW - hudW - (hudW ? gap : 0) - gap;
+    const statsW = Math.round(rest * 0.45);
+    const statsX = xs + hudW + (hudW ? gap : 0);
+    const well = { x: Math.round((W - wellW) / 2), y: y0 + stripH + Math.round(cell * 0.35), w: wellW, h: cell * rows };
     return {
       portrait,
       cell,
       well,
-      logo: { x: x0, y: y0, w: totalW, h: cell * 1.5 },
-      next: { x: sideX, y: well.y, w: cell * 4.6, h: cell * 8.2 },
-      stats: { x: sideX, y: well.y + cell * 8.7, w: cell * 4.6, h: cell * 11.3 },
+      logo: { x: xs, y: y0, w: 0, h: 0 },
+      hud: this.hudReserved ? { x: xs, y: y0, w: hudW, h: stripH } : null,
+      stats: { x: statsX, y: y0, w: statsW, h: stripH },
+      next: { x: statsX + statsW + gap, y: y0, w: rest - statsW, h: stripH },
     };
   }
 
@@ -228,7 +258,7 @@ export class Renderer {
     this.drawStats(view);
     this.drawFloatingTexts(now);
     this.drawVignette(now);
-    this.drawOverlay(view, now);
+    this.drawOverlay(view);
   }
 
   // ---- background / frame / logo ----------------------------------------------------
@@ -279,6 +309,7 @@ export class Renderer {
   private drawLogo(): void {
     const ctx = this.ctx;
     const { logo, cell, portrait } = this.layout;
+    if (portrait) return; // phones: the space goes to the board (title screen shows the logo)
     const img = this.assets.get('logo');
     if (img) {
       const s = Math.min(logo.w / img.naturalWidth, logo.h / img.naturalHeight);
@@ -526,7 +557,7 @@ export class Renderer {
   }
 
   // ---- panels ---------------------------------------------------------------------------
-  private drawPanel(r: Rect, title: string): void {
+  private drawPanel(r: Rect, title: string, titleScale = 0.42): void {
     const ctx = this.ctx;
     const { cell } = this.layout;
     ctx.save();
@@ -537,15 +568,16 @@ export class Renderer {
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = SCENE.textMuted;
-    ctx.font = `600 ${Math.round(cell * 0.42)}px ${SCENE.fontFamily}`;
+    ctx.font = `600 ${Math.round(cell * titleScale)}px ${SCENE.fontFamily}`;
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
-    ctx.fillText(title, r.x + cell * 0.4, r.y + cell * 0.35);
+    if (title) ctx.fillText(title, r.x + cell * (titleScale < 0.4 ? 0.3 : 0.4), r.y + cell * (titleScale < 0.4 ? 0.22 : 0.35));
     ctx.restore();
   }
 
   private drawNext(view: RenderView): void {
     const { next, cell, portrait } = this.layout;
+    if (portrait) return this.drawNextStrip(view);
     this.drawPanel(next, 'NEXT');
     const sizes = portrait ? [0.72, 0.55, 0.55] : [0.9, 0.7, 0.7];
     const slotH = portrait ? [2.6, 2.2, 2.2] : [3.4, 2.9, 2.9];
@@ -560,14 +592,12 @@ export class Renderer {
   private drawStats(view: RenderView): void {
     const ctx = this.ctx;
     const { stats, cell, portrait } = this.layout;
+    if (portrait) return this.drawStatsStrip(view);
     this.drawPanel(stats, 'STATS');
     const rows: Array<[string, string, boolean]> = [
       ['SCORE', view.score.toLocaleString('en-US'), false],
       ['LEVEL', String(view.level), false],
       ['LINES', String(view.lines), false],
-      ['MOVES', String(view.moves), false],
-      ['COMBO', view.combo > 0 ? `x${view.combo}` : '–', view.combo > 0],
-      ['B2B', view.b2b > 0 ? `x${view.b2b}` : '–', view.b2b > 0],
     ];
     const lineH = portrait ? cell * 1.45 : cell * 1.65;
     const labelSize = Math.round(cell * (portrait ? 0.36 : 0.4));
@@ -601,6 +631,57 @@ export class Renderer {
     ctx.fillText(txt, stats.x + cell * 0.4, stats.y + stats.h - cell * 1.15);
     ctx.fillStyle = SCENE.textMuted;
     ctx.fillText(view.muted ? '♪ muted (M)' : '♪ sound on (M)', stats.x + cell * 0.4, stats.y + stats.h - cell * 0.65);
+    ctx.restore();
+  }
+
+  /** Portrait: next queue as one row in the top strip. */
+  private drawNextStrip(view: RenderView): void {
+    const { next, cell } = this.layout;
+    this.drawPanel(next, 'NEXT', 0.34);
+    const inner = next.w - cell * 0.5;
+    const unit = inner / 3.3;
+    const weights = [1.3, 1, 1];
+    const sizes = [0.62, 0.48, 0.48];
+    let x = next.x + cell * 0.25;
+    const cy = next.y + next.h * 0.58;
+    view.nextQueue.slice(0, GAME_CONFIG.previewCount).forEach((type, i) => {
+      const w = unit * weights[i];
+      const size = Math.max(3, Math.round(Math.min(cell * sizes[i], w / 4.4)));
+      this.drawMiniPiece(type, x + w / 2, cy, size, i === 0 ? 1 : 0.85);
+      x += w;
+    });
+  }
+
+  /** Portrait: score on top, level + lines below, upload state as a small dot. */
+  private drawStatsStrip(view: RenderView): void {
+    const ctx = this.ctx;
+    const { stats, cell } = this.layout;
+    this.drawPanel(stats, '');
+    const labelSize = Math.round(cell * 0.34);
+    const padX = stats.x + cell * 0.3;
+    const half = (stats.w - cell * 0.6) / 2;
+    const item = (label: string, value: string, x: number, y: number, size: number, maxW: number) => {
+      ctx.fillStyle = SCENE.textMuted;
+      ctx.font = `500 ${labelSize}px ${SCENE.fontFamily}`;
+      ctx.fillText(label, x, y);
+      ctx.fillStyle = SCENE.textPrimary;
+      ctx.font = `600 ${size}px ${SCENE.monoFamily}`;
+      ctx.fillText(this.fit(value, maxW, size), x, y + labelSize * 1.15);
+    };
+    ctx.save();
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    const top = stats.y + (stats.h - cell * 2.75) / 2;
+    item('SCORE', view.score.toLocaleString('en-US'), padX, top, Math.round(cell * 0.72), stats.w - cell * 0.6);
+    item('LEVEL', String(view.level), padX, top + cell * 1.5, Math.round(cell * 0.6), half);
+    item('LINES', String(view.lines), padX + half, top + cell * 1.5, Math.round(cell * 0.6), half);
+    const dot: Record<UploadStatus, string> = {
+      idle: '#6b7399', sending: '#ffd166', saved: '#5be49b', failed: '#ff6b6b', local: '#8a93b8', skipped: '#8a93b8',
+    };
+    ctx.fillStyle = dot[view.uploadStatus];
+    ctx.beginPath();
+    ctx.arc(stats.x + stats.w - cell * 0.35, stats.y + cell * 0.35, cell * 0.11, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
   }
 
@@ -650,67 +731,12 @@ export class Renderer {
     ctx.fillRect(0, 0, this.width, this.height);
   }
 
-  private drawOverlay(view: RenderView, now: number): void {
-    if (view.state === 'playing') return;
-    const ctx = this.ctx;
-    const { well, cell } = this.layout;
-    ctx.save();
-    ctx.fillStyle = 'rgba(4, 6, 14, 0.78)';
-    ctx.fillRect(well.x, well.y, well.w, well.h);
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const cx = well.x + well.w / 2;
-    let y = well.y + well.h * 0.3;
-    const title = (text: string, hue: number) => {
-      ctx.font = `700 ${Math.round(cell * 1.1)}px ${SCENE.fontFamily}`;
-      ctx.fillStyle = hsla(hue, 95, 68);
-      ctx.shadowColor = hsla(hue, 95, 50, 0.8);
-      ctx.shadowBlur = cell * 0.7;
-      ctx.fillText(text, cx, y);
-      ctx.shadowBlur = 0;
-      y += cell * 1.5;
-    };
-    const line = (text: string, color: string = SCENE.textPrimary, scale = 0.46) => {
-      ctx.font = `500 ${Math.round(cell * scale)}px ${SCENE.fontFamily}`;
-      ctx.fillStyle = color;
-      ctx.fillText(text, cx, y);
-      y += cell * scale * 1.75;
-    };
-    const blink = Math.floor(now / 550) % 2 === 0;
-
-    if (view.state === 'ready') {
-      title('READY?', 190);
-      line(view.touchMode ? 'Tap START to play' : 'Press ENTER or any key', blink ? SCENE.textPrimary : SCENE.textMuted, 0.5);
-      y += cell * 0.6;
-      const keys: Array<[string, string]> = view.touchMode
-        ? [['◀ ▶', 'move'], ['⟲ ⟳', 'rotate'], ['▼', 'soft drop'], ['⤓', 'hard drop']]
-        : [['← →', 'move'], ['↑ / X', 'rotate right'], ['Z / Y / Ctrl', 'rotate left'], ['↓', 'soft drop'], ['Space', 'hard drop'], ['P / Esc', 'pause'], ['R', 'restart'], ['M', 'mute']];
-      for (const [k, d] of keys) line(`${k}  ·  ${d}`, SCENE.textMuted, 0.36);
-      y += cell * 0.4;
-      line('Every game is recorded anonymously', SCENE.textMuted, 0.3);
-      line('for a deep-learning research project.', SCENE.textMuted, 0.3);
-    } else if (view.state === 'paused') {
-      title('PAUSED', 50);
-      line(view.touchMode ? 'Tap ❚❚ to continue' : 'Press P / Esc to continue', SCENE.textMuted);
-    } else if (view.state === 'over') {
-      title('TOP OUT', 0);
-      line(`Score  ${view.score.toLocaleString('en-US')}`, SCENE.textPrimary, 0.55);
-      line(`Lines ${view.lines}  ·  Level ${view.level}  ·  Moves ${view.moves}`, SCENE.textMuted, 0.38);
-      y += cell * 0.4;
-      const status: Record<UploadStatus, [string, string]> = {
-        idle: ['', SCENE.textMuted],
-        sending: ['Saving game…', '#ffd166'],
-        saved: ['Game saved ✓ thanks!', '#5be49b'],
-        failed: ['Offline – will retry on next visit', '#ff6b6b'],
-        local: ['Not uploaded (no Supabase config)', SCENE.textMuted],
-        skipped: ['Too short to record', SCENE.textMuted],
-      };
-      const [s, c] = status[view.uploadStatus];
-      if (s) line(s, c, 0.4);
-      y += cell * 0.6;
-      line(view.touchMode ? 'Tap ↻ to play again' : 'Press R or ENTER to play again', blink ? SCENE.textPrimary : SCENE.textMuted, 0.46);
-    }
-    ctx.restore();
+  /** Pause / game-over text and buttons live in the DOM (GamePanel); the canvas only dims the well. */
+  private drawOverlay(view: RenderView): void {
+    if (view.state !== 'paused' && view.state !== 'over') return;
+    const { well } = this.layout;
+    this.ctx.fillStyle = 'rgba(4, 6, 14, 0.8)';
+    this.ctx.fillRect(well.x, well.y, well.w, well.h);
   }
 
   private roundRect(x: number, y: number, w: number, h: number, r: number): void {

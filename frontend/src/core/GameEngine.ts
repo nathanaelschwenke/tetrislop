@@ -112,8 +112,22 @@ export class GameEngine {
   // Lifecycle
   // ===========================================================================
   start(): void {
+    this.clear();
+    this.setState('playing');
+    this.events.emit('start', undefined);
+    this.spawn(this.bag.next());
+  }
+
+  /** Empties the board and returns to the idle 'ready' state (main menu). */
+  reset(): void {
+    this.clear();
+    this.setState('ready');
+  }
+
+  private clear(): void {
     this.board.reset();
     this.bag.reset();
+    this._active = null;
     this._score = 0;
     this._level = GAME_CONFIG.startLevel;
     this._lines = 0;
@@ -124,9 +138,6 @@ export class GameEngine {
     this._gameTimeMs = 0;
     this.softHeld = this.leftHeld = this.rightHeld = false;
     this.dasDir = 0;
-    this.setState('playing');
-    this.events.emit('start', undefined);
-    this.spawn(this.bag.next());
   }
 
   pause(): void {

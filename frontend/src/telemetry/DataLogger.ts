@@ -56,7 +56,7 @@ export class DataLogger {
   private gameId = '';
   private startedAt = '';
   private moves: MoveSnapshot[] = [];
-  private device: InputDevice | null = null;
+  private device: InputDevice = 'keyboard';
   private finalized = false;
   private hasSent = false;
   private _status: UploadStatus = 'idle';
@@ -77,20 +77,15 @@ export class DataLogger {
   get currentGameId(): string { return this.gameId; }
   get remoteEnabled(): boolean { return this.supabase !== null; }
 
-  startGame(): void {
+  /** @param device input method, fixed for the whole game (chosen in the main menu) */
+  startGame(device: Exclude<InputDevice, 'mixed'> = 'keyboard'): void {
     this.gameId = uuidv4();
     this.startedAt = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
     this.moves = [];
-    this.device = null;
+    this.device = device;
     this.finalized = false;
     this.hasSent = false;
     this.setStatus('idle');
-  }
-
-  noteInputDevice(device: Exclude<InputDevice, 'mixed'>): void {
-    if (!this.active) return;
-    if (this.device === null) this.device = device;
-    else if (this.device !== device) this.device = 'mixed';
   }
 
   recordMove(snapshot: MoveSnapshot): void {
@@ -104,7 +99,7 @@ export class DataLogger {
         playerId: this.playerId,
         startedAtIso: this.startedAt,
         gameVersion: GAME_VERSION,
-        inputDevice: this.device ?? 'keyboard',
+        inputDevice: this.device,
       },
       this.moves,
       reason,

@@ -62,8 +62,7 @@ const COLUMNS = [
 ];
 
 function playMoves(logger: DataLogger, n: number, afkTail = 0) {
-  logger.startGame();
-  logger.noteInputDevice('keyboard');
+  logger.startGame('keyboard');
   moves(n, afkTail).forEach((m) => logger.recordMove(m));
 }
 
