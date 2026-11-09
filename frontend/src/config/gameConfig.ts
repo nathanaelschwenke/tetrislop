@@ -52,10 +52,18 @@ export function levelForLines(linesClearedTotal: number): number {
 }
 
 export const TELEMETRY_CONFIG = {
-  endpoint: '/api/games',
-  /** Send a provisional "window_closed" checkpoint every N moves (0 = off). */
-  checkpointEveryMoves: 10,
-  /** sendBeacon / keepalive payloads above this size are not reliable. */
-  beaconMaxBytes: 60_000,
+  /** Supabase table that receives one row per game (INSERT only via RLS). */
+  table: 'games',
+  /** Games with fewer moves are not sent at all. */
+  minMoves: 3,
+  /** is_afk = last N moves without input and locked by gravity. */
+  afkWindow: 5,
+  /**
+   * Browsers reject `keepalive` requests whose body exceeds 64 KiB.
+   * Larger payloads are sent without keepalive (fine while the page stays open).
+   */
+  keepaliveMaxBytes: 60_000,
+  /** Retries for the final upload (network errors / 5xx only). */
+  maxAttempts: 3,
   playerIdStorageKey: 'tetrislop.player_id',
 } as const;

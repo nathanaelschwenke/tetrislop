@@ -591,7 +591,9 @@ export class Renderer {
       idle: ['● recording', '#6b7399'],
       sending: ['● saving…', '#ffd166'],
       saved: ['● saved', '#5be49b'],
-      failed: ['● offline – not saved', '#ff6b6b'],
+      failed: ['● offline – retry later', '#ff6b6b'],
+      local: ['● local only (console)', '#8a93b8'],
+      skipped: ['● too short – not saved', '#8a93b8'],
     };
     const [txt, color] = statusText[view.uploadStatus];
     ctx.font = `500 ${Math.round(cell * 0.34)}px ${SCENE.fontFamily}`;
@@ -699,7 +701,9 @@ export class Renderer {
         idle: ['', SCENE.textMuted],
         sending: ['Saving game…', '#ffd166'],
         saved: ['Game saved ✓ thanks!', '#5be49b'],
-        failed: ['Could not reach the server', '#ff6b6b'],
+        failed: ['Offline – will retry on next visit', '#ff6b6b'],
+        local: ['Not uploaded (no Supabase config)', SCENE.textMuted],
+        skipped: ['Too short to record', SCENE.textMuted],
       };
       const [s, c] = status[view.uploadStatus];
       if (s) line(s, c, 0.4);

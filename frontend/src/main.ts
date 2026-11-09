@@ -180,7 +180,8 @@ engine.events.on('gameOver', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Window lifecycle: pause + provisional save when hidden, beacon on unload
+// Window lifecycle: hiding the tab only pauses; closing the page sends the
+// running game once as "window_closed" (fetch with keepalive).
 // ---------------------------------------------------------------------------
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') {
@@ -188,7 +189,6 @@ document.addEventListener('visibilitychange', () => {
       input.releaseAll();
       engine.pause();
     }
-    logger.checkpoint(); // stored as "window_closed" until the game ends properly
     synth.suspend();
   } else {
     synth.resume();

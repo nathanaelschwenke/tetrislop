@@ -3,6 +3,8 @@ frontend/dist/
 __pycache__/
 *.pyc
 .venv/
-backend/data/top_out/*.json
-backend/data/aborted/*.json
+backend/data/**/*.json
 .DS_Store
+.env
+.env.local
+.env.*.local

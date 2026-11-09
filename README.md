@@ -1,47 +1,66 @@
 # TetriSlop – Phase 1: Game & Data Collection
 
 Web Tetris clone that records every placed piece as a telemetry snapshot for the
-survival-prediction model (Phase 2). Spec: `../claude.md`, project outline: `../outline.md`.
+survival-prediction model (Phase 2).
+
+Fully serverless:
 
 ```
-backend/   FastAPI – validates and stores game logs (data/top_out, data/aborted)
-frontend/  Vite + TypeScript + Canvas + Web Audio – the game
+frontend/   Vite + TypeScript + Canvas + Web Audio – static site on GitHub Pages
+            └─ inserts one row per finished game directly into Supabase (REST, anon key, INSERT-only RLS)
+supabase/   schema.sql – table + Row Level Security policy
+backend/    export_dataset.py – local script: Supabase -> data/top_out/<game_id>.json for PyTorch
+.github/    workflows/deploy.yml – build + deploy to GitHub Pages on every push to main
 ```
 
-## Run locally (development)
+## 1. Supabase setup (once)
+
+1. Create a project on supabase.com.
+2. SQL editor → run [`supabase/schema.sql`](supabase/schema.sql) (table `games`, checks, RLS: anon may only INSERT).
+3. Project Settings → API: copy the **Project URL**, the **anon public key** and the **service_role key**.
+
+## 2. Run the game locally
 
 ```bash
-# 1) backend  (Python ≥ 3.10)
+cd frontend
+cp .env.example .env.local     # fill in VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY
+npm install
+npm run dev                    # http://localhost:5173 (also reachable from phones in the LAN)
+```
+
+Without `.env.local` the game runs normally and prints each finished game as JSON to the browser console.
+
+## 3. Deploy to GitHub Pages
+
+1. Push the repo to GitHub.
+2. Repo → Settings → Secrets and variables → Actions → add
+   `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+3. Repo → Settings → Pages → Source: **GitHub Actions**.
+4. Every push to `main` runs tests, builds `frontend/` and publishes it at `https://<user>.github.io/<repo>/`
+   (`base: './'` keeps all paths relative).
+
+The anon key ends up in the public JS bundle – that is intended. RLS allows anonymous users only to insert;
+reading, updating and deleting rows is impossible with it. Never put the service role key into the frontend.
+
+## 4. Export the dataset for PyTorch
+
+```bash
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
-
-# 2) frontend (Node ≥ 18), second terminal
-cd frontend
-npm install
-npm run dev          # http://localhost:5173  (proxies /api -> :8000)
+cp .env.example .env           # SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
+python export_dataset.py       # top_out & not AFK -> data/top_out/<game_id>.json
 ```
 
-Phones in the same Wi-Fi can open `http://<your-LAN-IP>:5173` (touch controls appear automatically).
-
-## Deploy for testers (single link)
-
-```bash
-cd frontend && npm run build            # -> frontend/dist
-cd ../backend && uvicorn main:app --host 0.0.0.0 --port 8000
-```
-
-FastAPI then serves the game **and** the API on one origin (needed for `sendBeacon`).
-For testers outside your network put a tunnel/reverse proxy in front (e.g. `cloudflared tunnel --url http://localhost:8000`).
-
-Env vars: `TETRISLOP_DATA_DIR`, `TETRISLOP_FRONTEND_DIST`, `TETRISLOP_CORS_ORIGINS`.
+- Incremental: games already on disk are skipped (`--overwrite` re-downloads).
+- `--all` exports every game (restarts, closed windows, AFK) to `data/all/`.
+- `--out DIR` changes the target folder.
+- Each row is sanity-checked (move numbering, `total_moves`, 20×10 boards); broken rows are reported and skipped.
 
 ## Tests
 
 ```bash
-cd frontend && npm test                  # headless engine tests (scoring, kicks, DAS, lock delay, top-out, snapshots)
-cd backend  && python tests/test_storage.py   # schema validation + storage rules
+cd frontend && npm test        # engine (scoring, kicks, DAS, lock delay, top-out, snapshots) + telemetry
 ```
 
 ## Controls
@@ -57,34 +76,39 @@ cd backend  && python tests/test_storage.py   # schema validation + storage rule
 | R                     | ↻     | restart (touch: first tap pauses, second restarts) |
 | M                     | ♪     | mute          |
 
-## Data collection – how the log is produced
+## Data collection – how a game log is produced
 
 Snapshot cycle per move: *lock → clear lines → score/level/combo/b2b/perfect clear → next piece spawns → snapshot*.
 
-Implementation decisions on top of `claude.md`:
+One row per game in `games`, columns = top-level JSON keys:
+`game_id, player_id, timestamp_utc, game_version, input_device, termination_reason, is_afk, total_moves, final_score, final_lines, moves`.
 
-- **Final move on top out is logged.** For a lock out, the board after locking is stored and `current_piece`
-  is the piece that would have spawned; for a block out, `current_piece` is the piece that could not spawn.
-  So `total_moves − move_number = 0` on the last row.
-- **`time_delta_ms`** = time from the piece's spawn to its lock, game time only (pauses are excluded).
-- **`inputs_count`** = real presses of game keys/buttons during the piece (auto-repeat from DAS and OS key repeat are not counted).
-  **`rotations_count`** = successful rotations.
-- **`combo_counter`** is logged as `max(0, combo)` (internal −1 → 0), as in the spec. Use `lines_cleared_this_move`
-  to tell "no clear" from "first clear".
-- **`input_device`** = `keyboard`, `touch`, or `mixed` if both were used in one game.
-- **Tab hidden / window blur** → game pauses; on hidden a provisional log with `termination_reason: "window_closed"`
-  is sent. Additionally a checkpoint is sent every 10 moves, and a `sendBeacon` on page unload.
-  The backend keeps one file per `game_id`: a final log (`top_out`/`manual_restart`) replaces checkpoints,
-  checkpoints never replace a final log. So a closed tab leaves at most ≤ 10 moves missing even if the beacon is dropped.
-- **AFK**: if the last 5 moves have `inputs_count == 0` and `gravity_lock`, the game is stored in `aborted/`
-  with `server_meta.afk_flagged = true`.
-- Every stored file gets an extra `server_meta` block (`received_utc`, `category`, `afk_flagged`); everything else is the exact client schema.
-- Games with 0 moves (e.g. immediate restart) are not sent.
+Sending rules (`frontend/src/telemetry/DataLogger.ts`):
 
-## Phase 2 hooks already in place
+- **Once per game.** RLS allows INSERT only (no UPDATE/SELECT), so every game is sent exactly once
+  (`hasSent`), with `Prefer: return=minimal`. A duplicate `game_id` (HTTP 409) counts as already saved.
+- **When:** `top_out` and `manual_restart` when the game ends; `window_closed` on `pagehide`/`beforeunload`
+  via `fetch(..., { keepalive: true })`. Hiding the tab only **pauses** – nothing is sent.
+- **Short games** (`total_moves < 3`) are never sent.
+- **`is_afk`** is computed in the browser: ≥ 5 moves and the last 5 all have `inputs_count == 0` and `drop_type == "gravity_lock"`.
+- **keepalive limit:** browsers reject keepalive bodies above 64 KiB (≈ 100+ moves). Larger games are sent
+  without keepalive – fine for `top_out`/`manual_restart` (page stays open), best effort for very long games closed mid-run.
+- **Offline:** if a final upload fails (network / 5xx, after 3 attempts) it is stored in `localStorage`
+  and retried on the next visit.
 
-- `SynthEngine.setTensionState(t)` and `Renderer.setTensionVisuals(t)` / `setVisualModulation({...})`.
-  In Phase 1 tension comes from a mild stack-height heuristic in `main.ts`; swap it via
+Field semantics:
+
+- **Final move on top out is logged** (`total_moves − move_number = 0` on the last row). For a lock out,
+  `current_piece` is the piece that would have spawned; for a block out, the piece that could not spawn.
+- **`time_delta_ms`** = time from the piece's spawn to its lock, game time only (pauses excluded).
+- **`inputs_count`** = real presses of game keys/buttons (no DAS / OS auto-repeat); **`rotations_count`** = successful rotations.
+- **`combo_counter`** is `max(0, combo)` (internal −1 → 0). Use `lines_cleared_this_move` to tell "no clear" from "first clear".
+- **`input_device`** = `keyboard`, `touch`, or `mixed` if both were used.
+
+## Phase 2/3 hooks
+
+- `SynthEngine.setTensionState(t)`, `Renderer.setTensionVisuals(t)` / `setVisualModulation({...})`.
+  Phase 1 uses a mild stack-height heuristic in `main.ts`; swap it via
   `window.__tetrislop.setTensionProvider(() => prediction)`.
-- `POST /api/predict` + `Predictor` class in `backend/main.py` (returns 503 until a model is loaded).
+- With no server, live inference in Phase 3 has to run in the browser (e.g. export the PyTorch model to ONNX and use `onnxruntime-web`).
 - Debug console: `__tetrislop.renderer.setVisualModulation({ hueShiftDeg: 40 })`, `__tetrislop.synth.setPresetParams('hardDrop', { baseFrequencyHz: 120 })`.

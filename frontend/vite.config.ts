@@ -1,15 +1,13 @@
 import { defineConfig } from 'vite';
 
-// Dev: Vite on :5173 proxies /api to FastAPI on :8000.
-// Prod: `npm run build` -> dist/, which FastAPI serves directly (single origin).
+// Fully static build for GitHub Pages (https://<user>.github.io/<repo>/).
+// base './' keeps all JS/CSS/asset URLs relative, so the site works under any sub-path.
+// Telemetry goes directly to Supabase (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY).
 export default defineConfig({
   base: './',
   server: {
     host: true, // reachable from other devices in the LAN (phone testing)
     port: 5173,
-    proxy: {
-      '/api': { target: 'http://localhost:8000', changeOrigin: true },
-    },
   },
   build: {
     outDir: 'dist',

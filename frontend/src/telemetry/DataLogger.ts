@@ -1,7 +1,20 @@
 import { GAME_VERSION, TELEMETRY_CONFIG } from '../config/gameConfig';
 import type { GameLog, InputDevice, MoveSnapshot, TerminationReason } from '../core/types';
+import { buildGameLog, isWorthSending } from './payload';
+import { readSupabaseConfig, type SupabaseConfig } from './supabaseConfig';
 
-export type UploadStatus = 'idle' | 'sending' | 'saved' | 'failed';
+/**
+ * idle     game running, nothing sent yet
+ * sending  upload in progress
+ * saved    row inserted into Supabase
+ * failed   upload failed (kept locally, retried on next page load)
+ * local    Supabase not configured: log printed to the console
+ * skipped  game too short (< minMoves), nothing sent
+ */
+export type UploadStatus = 'idle' | 'sending' | 'saved' | 'failed' | 'local' | 'skipped';
+
+const PENDING_KEY = 'tetrislop.pending_games';
+const MAX_PENDING = 20;
 
 function uuidv4(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
@@ -27,13 +40,16 @@ function loadPlayerId(): string {
   }
 }
 
+type SendResult = 'saved' | 'retry' | 'rejected';
+
 /**
- * Records per-move snapshots of one game and ships the complete log to the
- * backend. Delivery strategy:
- *  - final result (top_out / manual_restart): regular fetch POST with retries
- *  - tab hidden / every N moves: provisional "window_closed" checkpoint, which
- *    the backend overwrites (same game_id) once the final result arrives
- *  - page unload: navigator.sendBeacon (size-limited, best effort)
+ * Records per-move snapshots of one game and inserts the finished log as one
+ * row into Supabase (`POST /rest/v1/games`). Each game is sent at most once
+ * (`hasSent`), because RLS only allows INSERT (no UPDATE / SELECT) for anon.
+ *
+ *  - top_out / manual_restart: sent when the game ends (with retries)
+ *  - window_closed: sent on pagehide / beforeunload with `keepalive`
+ *  - hiding the tab only pauses the game, nothing is sent
  */
 export class DataLogger {
   readonly playerId = loadPlayerId();
@@ -42,14 +58,24 @@ export class DataLogger {
   private moves: MoveSnapshot[] = [];
   private device: InputDevice | null = null;
   private finalized = false;
-  private lastCheckpointMoves = -1;
+  private hasSent = false;
   private _status: UploadStatus = 'idle';
   onStatusChange: (status: UploadStatus) => void = () => {};
+
+  /** @param supabase connection settings (defaults to the Vite env; injectable for tests) */
+  constructor(private readonly supabase: SupabaseConfig | null = readSupabaseConfig()) {
+    if (!this.supabase) {
+      console.info('[TetriSlop] VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY not set – game logs are printed to the console.');
+    } else {
+      void this.retryPending();
+    }
+  }
 
   get status(): UploadStatus { return this._status; }
   get active(): boolean { return !!this.gameId && !this.finalized; }
   get moveCount(): number { return this.moves.length; }
   get currentGameId(): string { return this.gameId; }
+  get remoteEnabled(): boolean { return this.supabase !== null; }
 
   startGame(): void {
     this.gameId = uuidv4();
@@ -57,7 +83,7 @@ export class DataLogger {
     this.moves = [];
     this.device = null;
     this.finalized = false;
-    this.lastCheckpointMoves = -1;
+    this.hasSent = false;
     this.setStatus('idle');
   }
 
@@ -68,90 +94,122 @@ export class DataLogger {
   }
 
   recordMove(snapshot: MoveSnapshot): void {
-    if (!this.active) return;
-    this.moves.push(snapshot);
-    const every = TELEMETRY_CONFIG.checkpointEveryMoves;
-    if (every > 0 && this.moves.length % every === 0) this.checkpoint();
+    if (this.active) this.moves.push(snapshot);
   }
 
   buildPayload(reason: TerminationReason): GameLog {
-    const last = this.moves[this.moves.length - 1];
-    return {
-      game_id: this.gameId,
-      player_id: this.playerId,
-      timestamp_utc: this.startedAt,
-      game_version: GAME_VERSION,
-      input_device: this.device ?? 'keyboard',
-      termination_reason: reason,
-      total_moves: this.moves.length,
-      final_score: last?.score ?? 0,
-      final_lines: last?.lines_cleared_total ?? 0,
-      moves: this.moves,
-    };
+    return buildGameLog(
+      {
+        gameId: this.gameId,
+        playerId: this.playerId,
+        startedAtIso: this.startedAt,
+        gameVersion: GAME_VERSION,
+        inputDevice: this.device ?? 'keyboard',
+      },
+      this.moves,
+      reason,
+    );
   }
 
-  /** Ends the game and uploads the final log. Games without moves are dropped. */
+  /** Ends the game (top out or restart) and uploads it once. */
   async finalize(reason: 'top_out' | 'manual_restart'): Promise<void> {
     if (!this.active) return;
     this.finalized = true;
-    if (this.moves.length === 0) return;
-    const payload = this.buildPayload(reason);
-    this.setStatus('sending');
-    const ok = await this.post(payload, 3);
-    this.setStatus(ok ? 'saved' : 'failed');
+    await this.send(reason, false);
   }
 
-  /** Provisional save while the game is still running (tab hidden, every N moves). */
-  checkpoint(): void {
-    if (!this.active || this.moves.length === 0 || this.moves.length === this.lastCheckpointMoves) return;
-    this.lastCheckpointMoves = this.moves.length;
-    void this.post(this.buildPayload('window_closed'), 1);
-  }
-
-  /** Last-chance delivery on page unload. */
+  /** Last-chance delivery when the page is closed / navigated away. */
   flushOnUnload(): void {
-    if (!this.active || this.moves.length === 0) return;
-    if (this.moves.length === this.lastCheckpointMoves) return; // already stored
-    const body = JSON.stringify(this.buildPayload('window_closed'));
-    const blob = new Blob([body], { type: 'application/json' });
-    let sent = false;
-    if (blob.size <= TELEMETRY_CONFIG.beaconMaxBytes && navigator.sendBeacon) {
-      sent = navigator.sendBeacon(TELEMETRY_CONFIG.endpoint, blob);
-    }
-    if (!sent) {
-      // Too large for a beacon: keepalive fetch may still succeed in some browsers.
-      try {
-        void fetch(TELEMETRY_CONFIG.endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body,
-          keepalive: blob.size <= TELEMETRY_CONFIG.beaconMaxBytes,
-        });
-      } catch { /* page is going away */ }
-    }
-    this.lastCheckpointMoves = this.moves.length;
+    if (!this.active) return;
+    this.finalized = true;
+    void this.send('window_closed', true);
   }
 
-  private async post(payload: GameLog, attempts: number): Promise<boolean> {
-    const body = JSON.stringify(payload);
-    for (let i = 0; i < attempts; i++) {
-      try {
-        const res = await fetch(TELEMETRY_CONFIG.endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body,
-        });
-        if (res.ok) return true;
-        if (res.status >= 400 && res.status < 500) {
-          console.warn('[TetriSlop] game log rejected', res.status, await res.text().catch(() => ''));
-          return false; // validation error: retrying will not help
-        }
-      } catch (err) {
-        if (i === attempts - 1) console.warn('[TetriSlop] could not reach backend', err);
-      }
-      await new Promise((r) => setTimeout(r, 600 * (i + 1)));
+  // ---------------------------------------------------------------------------
+  private async send(reason: TerminationReason, unloading: boolean): Promise<void> {
+    if (this.hasSent) return;
+    if (!isWorthSending(this.moves)) {
+      this.setStatus('skipped');
+      return;
     }
-    return false;
+    this.hasSent = true; // set before any await: prevents double inserts of the same game_id
+    const gameId = this.gameId;
+    // a restart starts the next game before this upload finishes: only report for the current one
+    const report = (s: UploadStatus) => { if (this.gameId === gameId) this.setStatus(s); };
+
+    const payload = this.buildPayload(reason);
+    if (!this.supabase) {
+      console.info(`[TetriSlop] game ${payload.game_id} (${reason}, ${payload.total_moves} moves) – not uploaded:`);
+      console.log(JSON.stringify(payload));
+      report('local');
+      return;
+    }
+
+    const body = JSON.stringify(payload);
+    report('sending');
+    const attempts = unloading ? 1 : TELEMETRY_CONFIG.maxAttempts;
+    let result: SendResult = 'retry';
+    for (let i = 0; i < attempts && result === 'retry'; i++) {
+      if (i > 0) await new Promise((r) => setTimeout(r, 700 * i));
+      result = await this.insert(this.supabase, body);
+    }
+    if (result === 'retry' && !unloading) this.storePending(body);
+    report(result === 'saved' ? 'saved' : 'failed');
+  }
+
+  /** One INSERT via the Supabase REST API (PostgREST). */
+  private async insert(cfg: SupabaseConfig, body: string): Promise<SendResult> {
+    const bytes = new TextEncoder().encode(body).length;
+    try {
+      const res = await fetch(`${cfg.url}/rest/v1/${TELEMETRY_CONFIG.table}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: cfg.anonKey,
+          Authorization: `Bearer ${cfg.anonKey}`,
+          Prefer: 'return=minimal', // anon has no SELECT permission -> must not ask for the row back
+        },
+        body,
+        // keepalive lets the request outlive the page, but browsers cap it at 64 KiB
+        keepalive: bytes <= TELEMETRY_CONFIG.keepaliveMaxBytes,
+      });
+      if (res.ok) return 'saved';
+      if (res.status === 409) return 'saved'; // duplicate game_id: this game is already stored
+      const detail = await res.text().catch(() => '');
+      console.warn(`[TetriSlop] Supabase rejected the game log (${res.status})`, detail);
+      return res.status >= 500 || res.status === 429 ? 'retry' : 'rejected';
+    } catch (err) {
+      console.warn('[TetriSlop] could not reach Supabase', err);
+      return 'retry';
+    }
+  }
+
+  // ---- offline queue: failed final uploads are retried on the next page load ----
+  private storePending(body: string): void {
+    try {
+      const list: string[] = JSON.parse(localStorage.getItem(PENDING_KEY) ?? '[]');
+      list.push(body);
+      localStorage.setItem(PENDING_KEY, JSON.stringify(list.slice(-MAX_PENDING)));
+    } catch { /* storage full or blocked: give up on this game */ }
+  }
+
+  private async retryPending(): Promise<void> {
+    if (!this.supabase) return;
+    let list: string[];
+    try {
+      list = JSON.parse(localStorage.getItem(PENDING_KEY) ?? '[]');
+    } catch {
+      return;
+    }
+    if (!Array.isArray(list) || list.length === 0) return;
+    const remaining: string[] = [];
+    for (const body of list) {
+      if ((await this.insert(this.supabase, body)) === 'retry') remaining.push(body);
+    }
+    try {
+      if (remaining.length) localStorage.setItem(PENDING_KEY, JSON.stringify(remaining));
+      else localStorage.removeItem(PENDING_KEY);
+    } catch { /* ignore */ }
   }
 
   private setStatus(status: UploadStatus): void {

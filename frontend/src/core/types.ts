@@ -30,7 +30,7 @@ export interface MoveSnapshot {
   board: string[];
 }
 
-/** Complete game log sent to POST /api/games. */
+/** Complete game log = one row in the Supabase `games` table (top-level keys = columns). */
 export interface GameLog {
   game_id: string;
   player_id: string;
@@ -38,6 +38,7 @@ export interface GameLog {
   game_version: string;
   input_device: InputDevice;
   termination_reason: TerminationReason;
+  is_afk: boolean;
   total_moves: number;
   final_score: number;
   final_lines: number;
