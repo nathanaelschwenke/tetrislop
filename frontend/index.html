@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#04050b" />
     <title>TetriSlop</title>
+    <meta name="description" content="Ein Tetris-Klon, der Spielverläufe für ein Deep-Learning-Projekt sammelt." />
+
+    <!-- Progressive Web App -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="TetriSlop" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet" />
@@ -93,6 +103,13 @@
               </svg>
               <span class="icon-label"></span>
             </button>
+            <button id="install-btn" class="icon-btn" hidden aria-label="App installieren">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3.5v11M7.5 10l4.5 4.5 4.5-4.5" />
+                <path d="M4 15.5v2.5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2.5" />
+              </svg>
+              <span class="icon-label">Installieren</span>
+            </button>
           </div>
           <p id="input-hint" class="input-hint"></p>
         </div>
@@ -107,6 +124,22 @@
           </p>
         </footer>
       </section>
+
+      <dialog id="install-dialog" class="info-dialog install-dialog" aria-labelledby="install-title">
+        <form method="dialog" class="info-close-form">
+          <button class="info-close" aria-label="Schließen">✕</button>
+        </form>
+        <h2 id="install-title">App installieren</h2>
+        <p>Auf iPhone und iPad geht das über Safari:</p>
+        <ol>
+          <li>Tippe unten (iPad: oben) auf
+            <span class="nowrap"><strong>Teilen</strong>&nbsp;<svg class="inline-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v11M8 7.5l4-4 4 4" /><path d="M8.5 10.5H6.5a1.5 1.5 0 0 0-1.5 1.5v7a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5v-7a1.5 1.5 0 0 0-1.5-1.5h-2" /></svg>.</span>
+          </li>
+          <li>Wähle <strong>Zum Home-Bildschirm</strong>.</li>
+          <li>Tippe auf <strong>Hinzufügen</strong>.</li>
+        </ol>
+        <p class="muted">Danach startet TetriSlop wie eine App ohne Browserleiste – und funktioniert auch offline.</p>
+      </dialog>
 
       <dialog id="info-dialog" class="info-dialog" aria-labelledby="info-title">
         <form method="dialog" class="info-close-form">

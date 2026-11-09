@@ -4,6 +4,7 @@ import { PIECE_COLORS } from '../config/visualConfig';
 import { pickTagline } from '../config/taglines';
 import type { PieceType } from '../core/Tetromino';
 import type { DbStatus } from '../telemetry/dbPing';
+import type { InstallMode } from './InstallPrompt';
 
 export type MenuDevice = 'keyboard' | 'touch' | 'gamepad';
 
@@ -12,6 +13,7 @@ export interface MainMenuHandlers {
   toggleMute(): void;
   toggleDevice(): void;
   recheckDb(): void;
+  install(): void;
 }
 
 const DB_TEXT: Record<DbStatus, string> = {
@@ -27,8 +29,6 @@ const DEVICE_HINT: Record<MenuDevice, string> = {
   gamepad: 'A / Start zum Starten · Steuerkreuz bewegen · A / B drehen · ↑ Hard Drop',
 };
 
-
-
 /**
  * DOM title screen: big play button, info popup, mute + input-method icons
  * and the database connection indicator. Holds no game state itself.
@@ -40,7 +40,9 @@ export class MainMenu {
   private readonly inputBtn: HTMLButtonElement;
   private readonly inputHint: HTMLElement;
   private readonly dbBtn: HTMLButtonElement;
-  private readonly dialog: HTMLDialogElement;
+  private readonly infoDialog: HTMLDialogElement;
+  private readonly installDialog: HTMLDialogElement;
+  private readonly installBtn: HTMLButtonElement;
 
   constructor(handlers: MainMenuHandlers) {
     const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -50,7 +52,9 @@ export class MainMenu {
     this.inputBtn = $('input-btn');
     this.inputHint = $('input-hint');
     this.dbBtn = $('db-status');
-    this.dialog = $('info-dialog');
+    this.infoDialog = $('info-dialog');
+    this.installDialog = $('install-dialog');
+    this.installBtn = $('install-btn');
 
     this.buildLogo();
     (this.root.querySelector('.menu-tag') as HTMLElement).textContent = pickTagline();
@@ -58,15 +62,17 @@ export class MainMenu {
     this.muteBtn.addEventListener('click', () => handlers.toggleMute());
     this.inputBtn.addEventListener('click', () => handlers.toggleDevice());
     this.dbBtn.addEventListener('click', () => handlers.recheckDb());
-    $('info-btn').addEventListener('click', () => this.openInfo());
-    // click on the backdrop closes the popup
-    this.dialog.addEventListener('click', (e) => {
-      if (e.target === this.dialog) {
-        const r = this.dialog.getBoundingClientRect();
+    this.installBtn.addEventListener('click', () => handlers.install());
+    $('info-btn').addEventListener('click', () => this.openDialog(this.infoDialog));
+    // click on the backdrop closes a popup
+    for (const dialog of [this.infoDialog, this.installDialog]) {
+      dialog.addEventListener('click', (e) => {
+        if (e.target !== dialog) return;
+        const r = dialog.getBoundingClientRect();
         const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
-        if (!inside) this.dialog.close();
-      }
-    });
+        if (!inside) dialog.close();
+      });
+    }
   }
 
   /** Root element (for controller focus navigation). */
@@ -74,33 +80,45 @@ export class MainMenu {
     return this.root;
   }
 
-  get dialogElement(): HTMLDialogElement {
-    return this.dialog;
+  private get openDialogEl(): HTMLDialogElement | null {
+    return [this.infoDialog, this.installDialog].find((d) => d.open) ?? null;
   }
 
-  /** Scrolls the info popup (controller up/down). */
-  scrollInfo(direction: -1 | 1): void {
-    this.dialog.scrollBy({ top: direction * 120, behavior: 'smooth' });
+  /** True while a popup is open (menu keys must not start the game). */
+  get dialogOpen(): boolean {
+    return this.openDialogEl !== null;
   }
 
-  /** True while the info popup is open (menu keys must not start the game). */
-  get infoOpen(): boolean {
-    return this.dialog.open;
+  /** Scrolls the open popup (controller up/down). */
+  scrollDialog(direction: -1 | 1): void {
+    this.openDialogEl?.scrollBy({ top: direction * 120, behavior: 'smooth' });
   }
 
   focusPlay(): void {
     focusHighlighted(this.playBtn);
   }
 
-  openInfo(): void {
-    if (this.dialog.open) return;
-    if (typeof this.dialog.showModal === 'function') this.dialog.showModal();
-    else this.dialog.setAttribute('open', '');
-    this.dialog.scrollTop = 0;
+  closeDialog(): void {
+    this.openDialogEl?.close();
   }
 
-  closeInfo(): void {
-    if (this.dialog.open) this.dialog.close();
+  /** iOS: step-by-step "add to home screen" guide. */
+  openInstallHelp(): void {
+    this.openDialog(this.installDialog);
+  }
+
+  /** Shows the install button only where installing is possible. */
+  setInstallMode(mode: InstallMode): void {
+    const wasFocused = document.activeElement === this.installBtn;
+    this.installBtn.hidden = mode === null;
+    if (wasFocused && mode === null) this.focusPlay();
+  }
+
+  private openDialog(dialog: HTMLDialogElement): void {
+    if (this.dialogOpen) return;
+    if (typeof dialog.showModal === 'function') dialog.showModal();
+    else dialog.setAttribute('open', '');
+    dialog.scrollTop = 0;
   }
 
   setMuted(muted: boolean): void {

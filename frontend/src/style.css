@@ -368,7 +368,41 @@ body:not([data-screen='menu']) .menu {
 
 .icon-row {
   display: flex;
+  justify-content: center;
   gap: 14px;
+}
+
+.icon-btn[hidden] {
+  display: none;
+}
+
+@media (max-width: 360px) {
+  .icon-row { gap: 8px; }
+  .icon-btn { width: 84px; }
+}
+
+.install-dialog ol {
+  margin: 0 0 12px;
+  padding-left: 22px;
+}
+
+.install-dialog li {
+  margin-bottom: 6px;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.inline-icon {
+  width: 18px;
+  height: 18px;
+  vertical-align: -3px;
+  fill: none;
+  stroke: #4fd8ff;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .icon-btn {

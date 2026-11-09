@@ -12,6 +12,7 @@ import { DataLogger } from './telemetry/DataLogger';
 import { pingDatabase } from './telemetry/dbPing';
 import { focusedButton, moveFocus, trackFocusClass } from './ui/focusNav';
 import { GamePanel } from './ui/GamePanel';
+import { InstallPrompt } from './ui/InstallPrompt';
 import { MainMenu } from './ui/MainMenu';
 
 type Device = Exclude<InputDevice, 'mixed'>;
@@ -65,7 +66,12 @@ const menu = new MainMenu({
   toggleMute: () => toggleMute(),
   toggleDevice: () => setMenuDevice(DEVICE_CYCLE[(DEVICE_CYCLE.indexOf(menuDevice) + 1) % DEVICE_CYCLE.length], true),
   recheckDb: () => void checkDb(true),
+  install: () => {
+    if (installer.mode === 'ios') menu.openInstallHelp();
+    else void installer.prompt();
+  },
 });
+const installer = new InstallPrompt((mode) => menu.setInstallMode(mode));
 const panel = new GamePanel({
   resume: () => togglePause(),
   retry: () => restartGame(),
@@ -179,7 +185,7 @@ function releaseInputs(): void {
 }
 
 function startGame(): void {
-  if (menu.infoOpen) menu.closeInfo();
+  if (menu.dialogOpen) menu.closeDialog();
   gameDevice = menuDevice; // locked until the player returns to the menu
   setTouchMode(gameDevice === 'touch');
   setScreen('game');
@@ -239,7 +245,7 @@ const input = new InputManager({
   },
   meta(action: MetaAction, device: Device) {
     if (screen === 'menu') {
-      if (menu.infoOpen) return;
+      if (menu.dialogOpen) return;
       if (action === 'start') startGame();
       else if (action === 'mute') toggleMute();
       return;
@@ -296,7 +302,7 @@ const gamepad = new GamepadManager({
   release: (action) => engine.release(action),
   start() {
     if (screen === 'menu') {
-      if (!menu.infoOpen) startGame();
+      if (!menu.dialogOpen) startGame();
       return;
     }
     if (gameDevice !== 'gamepad' || inGameOverCooldown()) return;
@@ -313,9 +319,9 @@ const gamepad = new GamepadManager({
 function gamepadUi(cmd: UiCommand): void {
   if (screen === 'game' && (gameDevice !== 'gamepad' || inGameOverCooldown())) return; // input lock / cooldown
   document.body.classList.add('gp-nav');
-  if (menu.infoOpen) {
-    if (cmd === 'confirm' || cmd === 'back') menu.closeInfo();
-    else if (cmd === 'up' || cmd === 'down') menu.scrollInfo(cmd === 'up' ? -1 : 1);
+  if (menu.dialogOpen) {
+    if (cmd === 'confirm' || cmd === 'back') menu.closeDialog();
+    else if (cmd === 'up' || cmd === 'down') menu.scrollDialog(cmd === 'up' ? -1 : 1);
     return;
   }
   const root = screen === 'menu' ? menu.element : panel.current ? panel.element : null;
@@ -449,7 +455,7 @@ let last = performance.now();
 function frame(now: number): void {
   const dt = now - last;
   last = now;
-  gamepad.uiMode = screen === 'menu' || engine.state !== 'playing' || menu.infoOpen;
+  gamepad.uiMode = screen === 'menu' || engine.state !== 'playing' || menu.dialogOpen;
   gamepad.poll(now);
   engine.update(dt);
 
@@ -488,6 +494,14 @@ function frame(now: number): void {
 }
 requestAnimationFrame(frame);
 showMenu();
+
+// Progressive Web App: installable + offline play (production builds only, so
+// the dev server is never served from a stale cache).
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch((err) => console.warn('[TetriSlop] service worker not registered', err));
+  });
+}
 
 // Debug / Phase 2 hooks, e.g. __tetrislop.renderer.setVisualModulation({ hueShiftDeg: 40 })
 declare global {
